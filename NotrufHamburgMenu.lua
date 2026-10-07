@@ -20,21 +20,8 @@ local flyConnection = nil
 local rainbowConnection = nil
 local godModeConnection = nil
 local currentMoveVector = Vector3.zero
-
-local function makeTextLabel(parent, text, size, pos, fontSize)
-    local label = Instance.new("TextLabel")
-    label.BackgroundTransparency = 1
-    label.Size = size
-    label.Position = pos
-    label.Font = Enum.Font.GothamBold
-    label.TextScaled = false
-    label.TextSize = fontSize
-    label.TextColor3 = Color3.fromRGB(255, 255, 255)
-    label.Text = text
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.Parent = parent
-    return label
-end
+local menuGui = nil
+local menuOpen = true
 
 local function makeButton(parent, text, size, pos, bgColor)
     local button = Instance.new("TextButton")
@@ -54,6 +41,17 @@ local function makeButton(parent, text, size, pos, bgColor)
     corner.Parent = button
 
     return button
+end
+
+local function setMenuVisible(visible)
+    menuOpen = visible
+    if menuGui then
+        menuGui.Enabled = visible
+    end
+end
+
+local function toggleMenu()
+    setMenuVisible(not menuOpen)
 end
 
 local function findVehicleForPlayer()
@@ -114,6 +112,7 @@ local function startCarFly()
 
     local vehicle = findVehicleForPlayer()
     if not vehicle then
+        print("❌ Keine Auto gefunden - bitte einsteigen!")
         return
     end
 
@@ -196,65 +195,63 @@ end
 local function setGodMode(enabled)
     local character = getCharacterModel()
     if not character then
+        print("❌ Kein Character gefunden!")
         return
     end
 
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if not humanoid then
+        print("❌ Humanoid nicht gefunden!")
         return
     end
 
     if enabled then
+        print("✅ God Mode AKTIVIERT!")
+        
+        -- Disconnect alte Connection
         if godModeConnection then
             godModeConnection:Disconnect()
             godModeConnection = nil
         end
 
-        local originalMaxHealth = humanoid.MaxHealth
-        local originalHealth = humanoid.Health
+        -- Setze sehr hohe Health
+        humanoid.MaxHealth = math.huge
+        humanoid.Health = math.huge
 
-        humanoid.MaxHealth = 1e9
-        humanoid.Health = 1e9
-
-        godModeConnection = humanoid.HealthChanged:Connect(function(newHealth)
-            if state.godMode and newHealth < 1e9 then
-                humanoid.Health = 1e9
+        -- Überwache Health und stelle sie wieder her
+        godModeConnection = humanoid.HealthChanged:Connect(function()
+            if state.godMode then
+                humanoid.Health = math.huge
             end
         end)
-
-        humanoid:SetAttribute("NotrufOriginalMaxHealth", originalMaxHealth)
-        humanoid:SetAttribute("NotrufOriginalHealth", originalHealth)
     else
+        print("❌ God Mode DEAKTIVIERT!")
+        
         if godModeConnection then
             godModeConnection:Disconnect()
             godModeConnection = nil
         end
 
-        local originalMaxHealth = humanoid:GetAttribute("NotrufOriginalMaxHealth")
-        local originalHealth = humanoid:GetAttribute("NotrufOriginalHealth")
-
-        if originalMaxHealth ~= nil then
-            humanoid.MaxHealth = originalMaxHealth
-        end
-
-        if originalHealth ~= nil then
-            humanoid.Health = originalHealth
-        end
+        humanoid.MaxHealth = 100
+        humanoid.Health = 100
     end
 end
 
 local function toggleGodMode()
     state.godMode = not state.godMode
     setGodMode(state.godMode)
+    print("God Mode Status: " .. tostring(state.godMode))
 end
 
 local function setRainbowCar(enabled)
     local vehicle = findVehicleForPlayer()
     if not vehicle then
+        print("❌ Keine Auto gefunden!")
         return
     end
 
     if enabled then
+        print("✅ Rainbow Car AKTIVIERT!")
         local hue = 0
         rainbowConnection = RunService.RenderStepped:Connect(function(dt)
             if not state.rainbowCar then
@@ -276,6 +273,7 @@ local function setRainbowCar(enabled)
             end
         end)
     else
+        print("❌ Rainbow Car DEAKTIVIERT!")
         if rainbowConnection then
             rainbowConnection:Disconnect()
             rainbowConnection = nil
@@ -291,6 +289,7 @@ end
 local function createRpgToolFE()
     local character = getCharacterModel()
     if not character then
+        print("❌ Kein Character gefunden!")
         return
     end
 
@@ -312,12 +311,19 @@ local function createRpgToolFE()
     handle.Massless = true
     handle.Parent = tool
 
-    local weld = Instance.new("WeldConstraint")
-    weld.Part0 = handle
-    weld.Part1 = character:FindFirstChild("RightHand") or character:FindFirstChild("LeftHand")
-    weld.Parent = handle
+    local rightHand = character:FindFirstChild("RightHand")
+    local leftHand = character:FindFirstChild("LeftHand")
+    local attachPart = rightHand or leftHand
+
+    if attachPart then
+        local weld = Instance.new("WeldConstraint")
+        weld.Part0 = handle
+        weld.Part1 = attachPart
+        weld.Parent = handle
+    end
 
     tool.Parent = player.Backpack
+    print("✅ RPG Tool FE erstellt!")
 
     tool.Activated:Connect(function()
         local char = getCharacterModel()
@@ -342,8 +348,6 @@ local function createRpgToolFE()
         projectile.Parent = workspace
 
         local trail = Instance.new("Trail")
-        trail.Attachment0 = nil
-        trail.Attachment1 = nil
         trail.Color = ColorSequence.new(Color3.fromRGB(255, 140, 0), Color3.fromRGB(255, 255, 255))
         trail.Lifetime = 0.2
         trail.LightEmission = 1
@@ -397,6 +401,10 @@ local function setupInput()
             end
             currentMoveVector = result
         end
+
+        if input.KeyCode == Enum.KeyCode.RightShift then
+            toggleMenu()
+        end
     end)
 
     UserInputService.InputEnded:Connect(function(input, gameProcessed)
@@ -428,8 +436,8 @@ local function createMenu()
 
     local bg = Instance.new("Frame")
     bg.Name = "Main"
-    bg.Size = UDim2.new(0, 420, 0, 430)
-    bg.Position = UDim2.new(0.5, -210, 0.5, -215)
+    bg.Size = UDim2.new(0, 420, 0, 480)
+    bg.Position = UDim2.new(0.5, -210, 0.5, -240)
     bg.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
     bg.BorderSizePixel = 0
     bg.Parent = screenGui
@@ -450,6 +458,25 @@ local function createMenu()
     local cornerShadow = Instance.new("UICorner")
     cornerShadow.CornerRadius = UDim.new(0, 18)
     cornerShadow.Parent = shadow
+
+    local closeButton = Instance.new("TextButton")
+    closeButton.Size = UDim2.new(0, 32, 0, 32)
+    closeButton.Position = UDim2.new(1, -40, 0, 12)
+    closeButton.Text = "X"
+    closeButton.TextSize = 18
+    closeButton.Font = Enum.Font.GothamBold
+    closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    closeButton.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
+    closeButton.BorderSizePixel = 0
+    closeButton.Parent = bg
+
+    local closeCorner = Instance.new("UICorner")
+    closeCorner.CornerRadius = UDim.new(0, 12)
+    closeCorner.Parent = closeButton
+
+    closeButton.MouseButton1Click:Connect(function()
+        setMenuVisible(false)
+    end)
 
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, -30, 0, 50)
@@ -490,27 +517,32 @@ local function createMenu()
     for i, item in ipairs(buttonList) do
         local name, size, pos, color = item[1], item[2], item[3], item[4]
         local btn = makeButton(bg, name, size, pos, color)
+
         btn.MouseButton1Click:Connect(function()
             if name == "Car Fly" then
                 toggleCarFly()
-                btn.Text = state.carFly and "Car Fly ON" or "Car Fly"
+                btn.Text = state.carFly and "Car Fly ON ✅" or "Car Fly"
             elseif name == "God Mode" then
                 toggleGodMode()
-                btn.Text = state.godMode and "God Mode ON" or "God Mode"
+                btn.Text = state.godMode and "God Mode ON ✅" or "God Mode"
             elseif name == "Rainbow Car" then
                 toggleRainbowCar()
-                btn.Text = state.rainbowCar and "Rainbow Car ON" or "Rainbow Car"
+                btn.Text = state.rainbowCar and "Rainbow Car ON ✅" or "Rainbow Car"
             elseif name == "RPG Tool FE" then
                 createRpgToolFE()
+                btn.Text = "✅ Spawned!"
+                task.wait(2)
+                btn.Text = "RPG Tool FE"
             end
         end)
+
         table.insert(buttons, btn)
     end
 
     local info = Instance.new("TextLabel")
-    info.Size = UDim2.new(1, -30, 0, 100)
-    info.Position = UDim2.new(0, 15, 0, 250)
-    info.Text = "Tastatur: W A S D + Leertaste / Strg\nFunktionen sind komplett in diesem GUI integriert."
+    info.Size = UDim2.new(1, -30, 0, 130)
+    info.Position = UDim2.new(0, 15, 0, 240)
+    info.Text = "🎮 Tasten: W A S D + Leertaste / Strg\n\n⚡ God Mode: Unsterblich bleiben!\n\n📞 Handy im Inventar nutzbar\n\nMenü Toggle: Rechts Shift"
     info.Font = Enum.Font.Gotham
     info.TextSize = 14
     info.TextWrap = true
@@ -523,20 +555,28 @@ local function createMenu()
     infoCorner.CornerRadius = UDim.new(0, 12)
     infoCorner.Parent = info
 
+    menuGui = screenGui
+    setMenuVisible(true)
     return screenGui
 end
 
+print("🚀 Notruf Hamburg Menu wird geladen...")
 setupInput()
 createMenu()
+print("✅ Menü erfolgreich erstellt!")
 
 player.CharacterAdded:Connect(function(character)
+    task.wait(0.5)
+    print("🔄 Character respawned!")
     if state.godMode then
+        print("⚡ God Mode wird reaktiviert...")
         setGodMode(true)
     end
 end)
 
 player.CharacterAdded:Connect(function()
     if state.carFly then
+        print("🚗 Car Fly wird reaktiviert...")
         startCarFly()
     end
 end)
